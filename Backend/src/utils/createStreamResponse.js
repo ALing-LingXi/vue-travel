@@ -9,6 +9,7 @@ export const createStreamResponse = (res)=>{
   return{
     send:(data)=>{
       try{
+        console.log(data);
         res.write(data);
       }catch(err){
         console.error("写入响应数据失败:", err);

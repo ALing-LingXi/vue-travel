@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 dotenv.config();
 // 调用LLM模型
 class TravelService {
@@ -27,7 +27,7 @@ class TravelService {
       configuration: { baseURL: baseurl }, // baseURL 放在 configuration 内
       model,
       temperature: 0.7,
-      streaming: false,
+      streaming: true,
     });
   }
   async recommend(city, budget, days) {
@@ -37,29 +37,30 @@ class TravelService {
     try {
       const message = this.getTravelPrompt(city, budget, days);
       const response = await this.llm.invoke(message);
-      const fullResponse = response.content||'';
+      const fullResponse = response.content || "";
       // fullResponse.match(/```json\n([\s\S]*?)\n```/) ||
       //   fullResponse.match(/```\n([\s\S]*?)\n```/) ||
       //   fullResponse.match(/\{[\s\S]*\}/);
       // console.log(response);
       // const jsonResult = JSON.parse(fullResponse);
-const match = fullResponse.match(/```json\s*([\s\S]*?)\s*```/) ||
-                  fullResponse.match(/```\s*([\s\S]*?)\s*```/) ||
-                  fullResponse.match(/\{[\s\S]*\}/);
+      const match =
+        fullResponse.match(/```json\s*([\s\S]*?)\s*```/) ||
+        fullResponse.match(/```\s*([\s\S]*?)\s*```/) ||
+        fullResponse.match(/\{[\s\S]*\}/);
 
-    if (!match) {
-      throw new Error("大模型未能返回结构化的计划数据");
-    }
+      if (!match) {
+        throw new Error("大模型未能返回结构化的计划数据");
+      }
 
-    // 3. 提取干净的字符串并进行解析
-    try {
-      const jsonString = match[1] ? match[1].trim() : match[0].trim();
-      const jsonResult = JSON.parse(jsonString);
-      return jsonResult;
-    } catch (parseErr) {
-      console.error("【解析失败】大模型原始返回文本如下：\n", fullResponse);
-      throw new Error(`解析 JSON 数据失败: ${parseErr.message}`);
-    }
+      // 3. 提取干净的字符串并进行解析
+      try {
+        const jsonString = match[1] ? match[1].trim() : match[0].trim();
+        const jsonResult = JSON.parse(jsonString);
+        return jsonResult;
+      } catch (parseErr) {
+        console.error("【解析失败】大模型原始返回文本如下：\n", fullResponse);
+        throw new Error(`解析 JSON 数据失败: ${parseErr.message}`);
+      }
     } catch (err) {
       return {
         success: false,
@@ -67,6 +68,39 @@ const match = fullResponse.match(/```json\s*([\s\S]*?)\s*```/) ||
       };
     }
   }
+  async chat(message, streamCallback) {
+    try {
+      // 1. 修正拼写：messages
+      const messages = [
+        new SystemMessage("你是一个专业的旅游规划师，负责为用户定制旅游计划。"),
+        new HumanMessage(message),
+      ];
+      // 2. 这里的 await 很关键，确保正确获取流式迭代器
+      const stream = await this.llm.stream(messages);
+      let fullResponse = "";
+      for await (const chunk of stream) {
+        const content = chunk.content || "";
+        // 3. 移除原先的 content.trim() == '' 过滤
+        // 只要 content 有内容（包括换行和空格），就吐给前端
+        if (content) {
+          fullResponse += content;
+          if (streamCallback) {
+            streamCallback(content); // 实时把哪怕是一个空格或换行发出去
+          }
+        }
+        return{success:true,reply:fullResponse};
+      }
+      // 4. 流正常结束后，如果需要通知外部，可以传一个特定标识或者不传
+      // 更好的做法是交给外层 Express 路由的 finally 块去执行 streamResponse.end()
+      if (streamCallback) {
+        streamCallback(null);
+      }
+    } catch (err) {
+      console.error("流式聊天出错：", err);
+      throw err;
+    }
+  }
+
   getTravelPrompt(city, budget, days) {
     return [
       new HumanMessage({
