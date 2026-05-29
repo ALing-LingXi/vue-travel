@@ -34,6 +34,7 @@ class TravelService {
     if (budget < 100 || days < 0 || days > 30) {
       throw new Error("预算不足或者天数错误");
     }
+    // 这边如果大于30天可能会接受一个超长字符串，这边是一个问题。
     try {
       const message = this.getTravelPrompt(city, budget, days);
       const response = await this.llm.invoke(message);
@@ -62,15 +63,11 @@ class TravelService {
         throw new Error(`解析 JSON 数据失败: ${parseErr.message}`);
       }
     } catch (err) {
-      return {
-        success: false,
-        message: err.message,
-      };
+      throw err;
     }
   }
   async chat(message, streamCallback) {
     try {
-      // 1. 修正拼写：messages
       const messages = [
         new SystemMessage("你是一个专业的旅游规划师，负责为用户定制旅游计划。"),
         new HumanMessage(message),
@@ -88,13 +85,13 @@ class TravelService {
             streamCallback(content); // 实时把哪怕是一个空格或换行发出去
           }
         }
-        return{success:true,reply:fullResponse};
       }
       // 4. 流正常结束后，如果需要通知外部，可以传一个特定标识或者不传
       // 更好的做法是交给外层 Express 路由的 finally 块去执行 streamResponse.end()
       if (streamCallback) {
         streamCallback(null);
       }
+        return{success:true,reply:fullResponse};
     } catch (err) {
       console.error("流式聊天出错：", err);
       throw err;
@@ -177,5 +174,4 @@ class TravelService {
     ];
   }
 }
-const travelService = new TravelService();
-export default travelService;
+export default TravelService;

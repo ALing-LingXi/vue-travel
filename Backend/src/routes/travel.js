@@ -1,8 +1,8 @@
 import express from "express";
-import travelService from "../services/traelService.js";
+import TravelService from "../services/traelService.js";
 import { createStreamResponse } from "../utils/createStreamResponse.js";
 const router = express.Router();
-
+const travelService = new TravelService();
 router.post("/recommend", async (req, res) => {
  const {city,budget,days} = req.body;
  if(!city||!budget||!days){
