@@ -26,7 +26,7 @@
         <div class="search-title">热门城市</div>
         <van-grid>
           <van-grid-item @click="selectCity(city)" v-for="(city, index) in hotCity" :key="index">
-            <div class="city-tag" :class="{'active':formDate.city===city }">{{ city }}</div>
+            <div class="city-tag" :class="{ 'active': formDate.city === city }">{{ city }}</div>
           </van-grid-item>
         </van-grid>
       </div>
