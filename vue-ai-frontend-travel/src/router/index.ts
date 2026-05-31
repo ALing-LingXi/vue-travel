@@ -12,6 +12,10 @@ const routes = [
     path: '/profile',
     component: () => import('@/views/ProfileView.vue'),
   },
+  {
+    path: '/detail',
+    component: () => import('@/views/detailView.vue'),
+  },
 ]
 const router = createRouter({
   history: createWebHistory(),

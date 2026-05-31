@@ -91,7 +91,7 @@ class TravelService {
       if (streamCallback) {
         streamCallback(null);
       }
-        return{success:true,reply:fullResponse};
+      return { success: true, reply: fullResponse };
     } catch (err) {
       console.error("流式聊天出错：", err);
       throw err;

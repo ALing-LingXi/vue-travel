@@ -35,11 +35,13 @@
       <van-picker title="请选择城市" :columns="cityColumns" @confirm="handleCityConfirm" @cancel="showCityPicker = false" />
     </van-popup>
   </div>
+
 </template>
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { showToast } from 'vant'
 // const allCity =['北京','上海','广州','深圳','成都','重庆','西安','西安']
 // const formDate = ref('')
 const formDate = reactive({
@@ -50,8 +52,39 @@ const formDate = reactive({
 const isloading = ref(false)
 const handleSubmit = async () => {
   isloading.value = true
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  isloading.value = false
+  if (!formDate.city) {
+    showToast('请输入城市');
+    isloading.value = false
+    return
+  }
+  if(!formDate.budget){
+    showToast('请输入预算')
+    isloading.value = false
+    return
+  }
+  if(formDate.budget<100){
+    showToast('预算不能低于100元')
+    isloading.value = false
+    return
+  }
+  if(!formDate.days){
+    showToast('请输入天数')
+    isloading.value = false
+    return
+  }
+  if(formDate.days<1 || formDate.days>30){
+    showToast("天数不能低于1天或高于30天")
+    isloading.value = false
+    return
+  }
+  router.push({
+    path: "/detail",
+    query: {
+      city: formDate.city,
+      budget: formDate.budget,
+      days: formDate.days
+    }
+  })
 }
 const showCityPicker = ref(false)
 const allCities = [
