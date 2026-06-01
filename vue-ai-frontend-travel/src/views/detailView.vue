@@ -112,6 +112,8 @@ const errorMsg = ref('')
 // 【修复 1】定义折叠面板所需的双向绑定变量，默认展开第一天 [0]
 const activeDays = ref<number[]>([0])
 
+let currentRequest: any = null
+
 const formDate = reactive({
   city: '',
   budget: 0,
@@ -148,26 +150,26 @@ const fetchRecommend = async () => {
     errorMsg.value = ''
     isloading.value = true
 
-    // 发送请求，此时 res 是业务层对象（内含 success 和 data 属性）
-    const res = await request.post('/recommend', {
+    const res = await (currentRequest = request.post('/recommend', {
       city: formDate.city,
       budget: formDate.budget,
       days: formDate.days,
-    }) as RecommendResponse
+    }, { timeout: 300000 })) as RecommendResponse
 
     console.log('拦截器处理后的响应数据 res:', res)
 
-    // 【修复 2】结合你的拦截器，正确拆解数据层次
     if (res && res.success !== false) {
       tripData.value = res.result || { dailyItinerary: [] }
     } else {
       errorMsg.value = res?.error ?? ''
     }
   } catch (err: any) {
-    // 捕获 HTTP 错误或拦截器 reject 的错误
-    errorMsg.value = err.message || '网络请求异常，请稍后重试'
-    console.error('请求出错:', err)
+    if (err.message !== '请求已被取消') {
+      errorMsg.value = err.message || '网络请求异常，请稍后重试'
+      console.error('请求出错:', err)
+    }
   } finally {
+    currentRequest = null
     isloading.value = false
   }
 }
@@ -176,6 +178,9 @@ const fetchRecommend = async () => {
 const getRecomend = debounce(fetchRecommend, 300)
 
 const onBack = () => {
+  if (currentRequest && typeof currentRequest.cancel === 'function') {
+    currentRequest.cancel()
+  }
   router.back()
 }
 </script>

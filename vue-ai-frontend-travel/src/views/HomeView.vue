@@ -39,11 +39,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive,onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 // const allCity =['北京','上海','广州','深圳','成都','重庆','西安','西安']
 // const formDate = ref('')
+onMounted(() => {
+
+})
 const formDate = reactive({
   city: '',
   budget: undefined,
