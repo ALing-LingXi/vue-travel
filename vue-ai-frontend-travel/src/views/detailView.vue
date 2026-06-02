@@ -1,7 +1,7 @@
 <template>
   <div class="page-container">
     <div class="page-header">
-      <van-nav-bar left-arrow @click="onBack" :title="formDate.city + '行程详情'" />
+      <van-nav-bar left-arrow @click="onBack" :title="(formDate?.city || '') + '行程详情'" />
     </div>
     <div class="page-content">
       <div v-if="isloading" class="loading-container">
@@ -18,28 +18,62 @@
 
       <template v-else-if="tripData && tripData.dailyItinerary && tripData.dailyItinerary.length > 0">
 
-
         <div class="card overview-card">
           <div class="trip-header">
-            <h2>{{ tripData.city }} · {{ tripData.days }}天行程</h2>
-            <div class="trip-budget">预算：{{ tripData.totalBudget }}元</div>
+            <h2>{{ tripData?.city }} · {{ tripData?.days }}天行程</h2>
+            <div class="trip-budget">预算：{{ tripData?.totalBudget }}元</div>
           </div>
         </div>
+
+        <div class="card weather-card" v-if="weatherData">
+          <div class="section-title">
+            📊 今日天气
+          </div>
+          <div class="weather-content">
+            <div class="weather-main">
+              <div class="weather-icon">{{ getWeatherIcon(weatherData?.weather || '') }}</div>
+              <div class="weather-info">
+                <div class="weather-temp">{{ weatherData?.temperature }}°C</div>
+                <div class="weather-desc">{{ weatherData?.weather }}</div>
+              </div>
+            </div>
+            <div class="weather-details">
+              <div class="detail-item">
+                <span class="detail-label">湿度</span>
+                <span class="detail-value">{{ weatherData?.todayWeather?.humidity }}%</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">PM2.5</span>
+                <span class="detail-value">{{ weatherData?.psPm25 }} μg/m³</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">空气质量</span>
+                <span class="detail-value">{{ weatherData?.psPm25Level }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">风向</span>
+                <span class="detail-value">{{ weatherData?.windDirection }} {{ weatherData?.windPower }}</span>
+              </div>
+            </div>
+            <div class="weather-update">更新时间：{{ weatherData?.date }}</div>
+          </div>
+        </div>
+
         <van-collapse v-model="activeDays">
           <van-collapse-item v-for="(day, index) in tripData.dailyItinerary" :key="index" :title="`第${index + 1}天`"
             :name="index">
             <div class="day-schedule">
-              <div class="schedule-section">
+              <div class="schedule-section" v-if="day?.morning">
                 <div class="section-label morning">上午</div>
                 <SpotItem :data="day.morning" />
               </div>
 
-              <div class="schedule-section">
+              <div class="schedule-section" v-if="day?.afternoon">
                 <div class="section-label afternoon">下午</div>
                 <SpotItem :data="day.afternoon" />
               </div>
 
-              <div class="schedule-section">
+              <div class="schedule-section" v-if="day?.evening">
                 <div class="section-label evening">晚上</div>
                 <SpotItem :data="day.evening" />
               </div>
@@ -47,15 +81,14 @@
           </van-collapse-item>
         </van-collapse>
 
-        <!-- v-if="collapse" -->
-        <div class="card budget-card" v-if="tripData.budgetBreakdown">
+        <div class="card budget-card" v-if="tripData?.budgetBreakdown">
           <div class="section-title">
             预算明细
           </div>
-          <BudgetTable :data="tripData.budgetBreakdown" :total="tripData.totalBudget" />
+          <BudgetTable :data="tripData.budgetBreakdown" :total="tripData?.totalBudget || 0" />
         </div>
 
-        <div class="card tips-card" v-if="tripData.tips && tripData.tips.length">
+        <div class="card tips-card" v-if="tripData?.tips && tripData.tips.length">
           <div class="section-title">
             温馨提示
           </div>
@@ -64,7 +97,7 @@
           </ul>
         </div>
 
-        <div class="card warnings-card" v-if="tripData.warnings && tripData.warnings.length">
+        <div class="card warnings-card" v-if="tripData?.warnings && tripData.warnings.length">
           <div class="section-title">
             注意事项
           </div>
@@ -73,7 +106,7 @@
           </ul>
         </div>
 
-        <div class="detail-footer" v-if="tripData.dailyItinerary && tripData.dailyItinerary.length > 0">
+        <div class="detail-footer" v-if="tripData?.dailyItinerary && tripData.dailyItinerary.length > 0">
           <van-button type="primary" size="large" @click="toChat" round>聊天</van-button>
         </div>
       </template>
@@ -93,13 +126,22 @@ import request from '@/utils/request'
 import { debounce } from 'lodash-es'
 import SpotItem from '@/componets/SpotItem.vue'
 import BudgetTable from '@/componets/BudgetTable.vue'
+import { searchCity, getWeather, type WeatherData } from '@/utils/weather'
+
+// 【优化】细化后端返回的行程数据接口，让 TS 了解其内部可能有 undefined 的属性
+interface TripDataStructure {
+  city?: string
+  days?: number
+  totalBudget?: number
+  dailyItinerary: any[]
+  budgetBreakdown?: any
+  tips?: string[]
+  warnings?: string[]
+}
 
 interface RecommendResponse {
   success?: boolean
-  result?: {
-    dailyItinerary: any[]
-    [key: string]: any
-  }
+  result?: TripDataStructure
   error?: string
 }
 
@@ -109,8 +151,11 @@ const router = useRouter()
 const isloading = ref(true)
 const errorMsg = ref('')
 
-// 【修复 1】定义折叠面板所需的双向绑定变量，默认展开第一天 [0]
 const activeDays = ref<number[]>([0])
+
+// 天气状态允许为 null
+const weatherData = ref<WeatherData | null>(null)
+const weatherLoading = ref(false)
 
 let currentRequest: any = null
 
@@ -120,13 +165,20 @@ const formDate = reactive({
   days: 0
 })
 
-// 【优化】初始化具体的结构，避免 template 报 undefined 错误
-const tripData = ref<{ dailyItinerary: any[];[key: string]: any }>({ dailyItinerary: [] })
+// 【优化与修复】通过接口类型约束，同时给定完美的初始值，从根本上杜绝模板在挂载初期的 undefined 报错
+const tripData = ref<TripDataStructure>({
+  city: '',
+  days: 0,
+  totalBudget: 0,
+  dailyItinerary: [],
+  tips: [],
+  warnings: []
+})
 
 onMounted(async () => {
-  formDate.city = String(route.query.city ?? "")
-  formDate.budget = Number(route.query.budget ?? "")
-  formDate.days = Number(route.query.days ?? "")
+  formDate.city = String(route.query?.city ?? "")
+  formDate.budget = Number(route.query?.budget ?? 0)
+  formDate.days = Number(route.query?.days ?? 0)
 
   if (!formDate.city || !formDate.budget || !formDate.days) {
     showNotify('请输入城市、预算和天数')
@@ -134,7 +186,38 @@ onMounted(async () => {
     return
   }
   getRecomend()
+  fetchWeather()
 })
+
+const fetchWeather = async () => {
+  if (!formDate.city) return
+
+  try {
+    weatherLoading.value = true
+    const cities = await searchCity(formDate.city)
+    // 【安全防护】全面检查数组及属性是否存在
+    if (cities && cities.length > 0 && cities[0]?.code) {
+      const weather = await getWeather(cities[0].code)
+      weatherData.value = weather || null
+    }
+  } catch (err) {
+    console.error('获取天气失败:', err)
+  } finally {
+    weatherLoading.value = false
+  }
+}
+
+const getWeatherIcon = (weather: string): string => {
+  // 【安全防护】兜底字符串判空
+  if (!weather) return '🌤️'
+  if (weather.includes('晴')) return '☀️'
+  if (weather.includes('云')) return '☁️'
+  if (weather.includes('雨')) return '🌧️'
+  if (weather.includes('雪')) return '❄️'
+  if (weather.includes('雷')) return '⛈️'
+  if (weather.includes('雾')) return '🌫️'
+  return '🌤️'
+}
 
 const toChat = () => {
   router.push({
@@ -159,9 +242,10 @@ const fetchRecommend = async () => {
     console.log('拦截器处理后的响应数据 res:', res)
 
     if (res && res.success !== false) {
+      // 【安全防护】即使接口返回的 result 是空，也通过默认值结构锁死 dailyItinerary 数组
       tripData.value = res.result || { dailyItinerary: [] }
     } else {
-      errorMsg.value = res?.error ?? ''
+      errorMsg.value = res?.error ?? '获取推荐失败'
     }
   } catch (err: any) {
     if (err.message !== '请求已被取消') {
@@ -174,7 +258,6 @@ const fetchRecommend = async () => {
   }
 }
 
-// 【优化】防抖改为 300ms（2000ms 太长会导致页面加载极度滞后，误以为卡死）
 const getRecomend = debounce(fetchRecommend, 300)
 
 const onBack = () => {
@@ -184,7 +267,6 @@ const onBack = () => {
   router.back()
 }
 </script>
-
 <style scoped>
 .page-container {
   min-height: 100vh;
@@ -211,6 +293,80 @@ const onBack = () => {
 
 .overview-card {
   margin-bottom: 16px;
+}
+
+.weather-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+.weather-card .section-title {
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 16px;
+}
+
+.weather-content {
+  padding: 8px 0;
+}
+
+.weather-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.weather-icon {
+  font-size: 48px;
+}
+
+.weather-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.weather-temp {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.weather-desc {
+  font-size: 14px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+.weather-details {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detail-label {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.detail-value {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.weather-update {
+  font-size: 12px;
+  opacity: 0.6;
+  text-align: right;
 }
 
 .trip-collapse {

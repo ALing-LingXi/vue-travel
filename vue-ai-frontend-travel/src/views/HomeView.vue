@@ -5,21 +5,30 @@
     </div>
     <div class="page-content">
       <van-notice-bar left-icon="info-o" text="出行旅游就来希希出行" style="margin-bottom: 16px;" />
+
+      <!-- 天气卡片 -->
+      <WeatherCard v-if="weatherData" :city-name="selectedCityName" :weather-data="weatherData" />
+
       <div class="card search-card">
         <div class="search-title">规划你的行程</div>
-        <van-field is-link readonly v-model="formDate.city" label="目的地" placeholder="请选择城市"
-          @click="showCityPicker = true" style="background-color: #f7f8fa; border-radius: 8px; margin-bottom: 16px;" />
+
+        <!-- 城市搜索 -->
+        <van-field v-model="citySearchKeyword" is-link readonly label="目的地" placeholder="请搜索城市"
+          @click="showCitySearch = true" style="background-color: #f7f8fa; border-radius: 8px; margin-bottom: 16px;" />
+
         <van-field v-model="formDate.budget" label="预算" placeholder="请输入预算" type="number"
           style="background-color: #f7f8fa; border-radius: 8px; margin-bottom: 16px;" />
         <van-field v-model="formDate.days" label="天数" placeholder="请输入天数" type="digit"
           style="background-color: #f7f8fa; border-radius: 8px; margin-bottom: 16px;" />
         <van-button type="primary" round size="large" :loading="isloading" @click="handleSubmit">开始规划</van-button>
       </div>
-      <div class="card" quick-actions>
+
+      <div class="card quick-actions">
         <div class="search-title">快捷栏</div>
-        <van-grid gutter="12" column-num="2">
-          <van-grid-item @click="transition('/chart')" icon="chat-o" text="标签" />
-          <van-grid-item @click="transition('/profile')" icon="user-o" text="用户" />
+        <van-grid gutter="12" column-num="3">
+          <van-grid-item @click="transition('/chart')" icon="chat-o" text="AI助手" />
+          <van-grid-item @click="transition('/weather')" icon="search" text="天气查询" />
+          <van-grid-item @click="transition('/profile')" icon="user-o" text="个人中心" />
         </van-grid>
       </div>
       <div class="card popular-destinations">
@@ -31,55 +40,135 @@
         </van-grid>
       </div>
     </div>
-    <van-popup v-model:show="showCityPicker" round position="bottom">
-      <van-picker title="请选择城市" :columns="cityColumns" @confirm="handleCityConfirm" @cancel="showCityPicker = false" />
+
+    <!-- 城市搜索弹窗 -->
+    <van-popup v-model:show="showCitySearch" round position="bottom" style="height: 60%;">
+      <div class="city-search-popup">
+        <van-search v-model="citySearchInput" placeholder="请输入城市名称" show-action @search="handleCitySearch"
+          @cancel="showCitySearch = false" />
+        <div class="search-results" v-if="citySearchResults.length">
+          <van-cell-group>
+            <van-cell v-for="city in citySearchResults" :key="city.code" :title="city.name" is-link
+              @click="handleSelectCity(city)" />
+          </van-cell-group>
+        </div>
+        <van-empty v-else description="请输入城市名称搜索" />
+      </div>
     </van-popup>
   </div>
-
 </template>
 
 <script setup lang="ts">
-import { ref, reactive,onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
-// const allCity =['北京','上海','广州','深圳','成都','重庆','西安','西安']
-// const formDate = ref('')
-onMounted(() => {
+import { searchCity, getWeather, type CityInfo, type WeatherData } from '@/utils/weather'
+import WeatherCard from '@/components/WeatherCard.vue'
 
-})
+const router = useRouter()
+
 const formDate = reactive({
   city: '',
-  budget: undefined,
-  days: undefined
+  cityCode: '',
+  budget: undefined as number | undefined,
+  days: undefined as number | undefined
 })
+
 const isloading = ref(false)
+const showCitySearch = ref(false)
+const citySearchInput = ref('')
+const citySearchKeyword = ref('')
+const citySearchResults = ref<CityInfo[]>([])
+const selectedCityName = ref('')
+const weatherData = ref<WeatherData | null>(null)
+
+// 热门城市
+const hotCity = ['北京', '上海', '广州', '深圳', '成都', '重庆', '西安', '杭州']
+
+// 城市搜索
+const handleCitySearch = async () => {
+  if (!citySearchInput.value.trim()) {
+    showToast('请输入城市名称')
+    return
+  }
+
+  try {
+    const results = await searchCity(citySearchInput.value.trim())
+    citySearchResults.value = results
+  } catch (err) {
+    showToast('搜索失败，请重试')
+    console.error('城市搜索失败:', err)
+  }
+}
+
+// 选择城市
+const handleSelectCity = async (city: CityInfo) => {
+  const cityName = city.name.split(' - ')[0] || ''
+  formDate.city = cityName
+  formDate.cityCode = city.code
+  citySearchKeyword.value = city.name
+  selectedCityName.value = cityName
+  showCitySearch.value = false
+
+  // 获取天气
+  try {
+    const weather = await getWeather(city.code)
+    weatherData.value = weather
+  } catch (err) {
+    console.error('获取天气失败:', err)
+  }
+}
+
+// 选择热门城市
+const selectCity = async (city: string) => {
+  formDate.city = city
+  citySearchKeyword.value = city
+
+  try {
+    const results = await searchCity(city)
+    const firstResult = results[0]
+    if (firstResult) {
+      formDate.cityCode = firstResult.code
+      const cityName = firstResult.name.split(' - ')[0] || ''
+      selectedCityName.value = cityName
+
+      const weather = await getWeather(firstResult.code)
+      weatherData.value = weather
+    }
+  } catch (err) {
+    console.error('获取城市信息失败:', err)
+  }
+}
+
+// 提交表单
 const handleSubmit = async () => {
   isloading.value = true
   if (!formDate.city) {
-    showToast('请输入城市');
+    showToast('请选择城市');
     isloading.value = false
     return
   }
-  if(!formDate.budget){
+  if (!formDate.budget) {
     showToast('请输入预算')
     isloading.value = false
     return
   }
-  if(formDate.budget<100){
+  if (formDate.budget < 100) {
     showToast('预算不能低于100元')
     isloading.value = false
     return
   }
-  if(!formDate.days){
+  if (!formDate.days) {
     showToast('请输入天数')
     isloading.value = false
     return
   }
-  if(formDate.days<1 || formDate.days>30){
+  if (formDate.days < 1 || formDate.days > 30) {
     showToast("天数不能低于1天或高于30天")
     isloading.value = false
     return
   }
+
   router.push({
     path: "/detail",
     query: {
@@ -89,46 +178,46 @@ const handleSubmit = async () => {
     }
   })
 }
-const showCityPicker = ref(false)
-const allCities = [
-  '北京', '上海', '广州', '深圳', '成都', '杭州', '西安', '重庆',
-  '南京', '武汉', '苏州', '长沙', '天津', '郑州', '济南', '青岛',
-  '大连', '沈阳', '哈尔滨', '长春', '福州', '厦门', '南昌', '合肥',
-  '昆明', '贵阳', '南宁', '桂林', '海口', '三亚', '丽江', '大理',
-  '西安', '兰州', '乌鲁木齐', '拉萨', '呼和浩特', '太原', '石家庄'
-]
-const hotCity = ['北京', '上海', '广州', '深圳', '成都', '重庆', '西安', '杭州']
-const cityColumns = allCities.map(city => ({
-  text: city, value: city
-}))
-const handleCityConfirm = ({ selectedValues }: { selectedValues: string[] }) => {
-  // 处理用户选择的城市兜底情况
-  formDate.city = selectedValues[0] || ''
-  showCityPicker.value = false
-}
-const router = useRouter()
+
+// 页面跳转
 function transition(path: string) {
   router.push(path)
-}
-function selectCity(city: string) {
-  formDate.city = city
 }
 </script>
 
 <style scoped>
 .page-container {
-  height: 2000px;
+  min-height: 100vh;
+  background: #f7f8fa;
 }
 
-/* .search-card {
-  margin-bottom: 16px;
-  font-weight: bold;
-} */
+.page-content {
+  padding-bottom: 60px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  margin: 12px 16px;
+  padding: 16px;
+}
 
 .search-title {
-  margin-bottom: 16px;
-  margin-bottom: 16px;
+  font-size: 16px;
   font-weight: bold;
+  color: #323233;
+  margin-bottom: 16px;
+}
+
+.city-search-popup {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-results {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .popular-destinations .city-tag {

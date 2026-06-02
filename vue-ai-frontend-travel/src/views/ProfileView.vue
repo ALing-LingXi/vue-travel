@@ -1,45 +1,35 @@
 <template>
   <div class="profile-container">
-    <van-nav-bar
-      title="我的"
-      left-text=""
-    />
+    <van-nav-bar title="我的" left-text="" />
 
     <!-- 用户信息区域 -->
     <div class="user-info">
-      <van-image
-        :src="userAvatar"
-        round
-        class="avatar"
-      />
+      <van-image :src="userAvatar" round fit="cover" class="avatar" />
       <div class="user-details">
-        <h2 class="user-name">{{ userName }}</h2>
-        <p class="user-desc">欢迎使用智能旅游助手</p>
+        <h2 class="user-name">{{ displayName }}</h2>
+        <p class="user-desc">
+          {{ userDesc || (isLoggedIn ? '欢迎回来！' : '欢迎使用智能旅游助手') }}
+        </p>
       </div>
+    </div>
+
+    <!-- 登录/登出按钮 -->
+    <div class="auth-btn-section" v-if="!isLoggedIn">
+      <van-button type="primary" round size="large" @click="goLogin">登录 / 注册</van-button>
+    </div>
+    <div class="logout-section" v-else>
+      <van-button type="danger" plain round size="large" @click="handleLogout" class="logout-btn">
+        <van-icon name="arrow-left" /> 退出登录
+      </van-button>
     </div>
 
     <!-- 功能菜单 -->
     <div class="menu-section">
       <h3 class="menu-title">我的服务</h3>
       <van-cell-group>
-        <van-cell
-          title="我的收藏"
-          is-link
-          :icon="'star-o'"
-          @click="showToast('功能开发中')"
-        />
-        <van-cell
-          title="历史记录"
-          is-link
-          :icon="'history'"
-          @click="showToast('功能开发中')"
-        />
-        <van-cell
-          title="设置"
-          is-link
-          :icon="'settings'"
-          @click="showToast('功能开发中')"
-        />
+        <van-cell title="我的收藏" is-link :icon="'star-o'" @click="showToast('功能开发中')" />
+        <van-cell title="历史记录" is-link :icon="'history'" @click="showToast('功能开发中')" />
+        <van-cell title="设置" is-link :icon="'settings'" @click="goSettings" />
       </van-cell-group>
     </div>
 
@@ -47,24 +37,13 @@
     <div class="menu-section">
       <h3 class="menu-title">关于</h3>
       <van-cell-group>
-        <van-cell
-          title="关于我们"
-          is-link
-          @click="showAboutDialog"
-        />
-        <van-cell
-          title="版本信息"
-          value="v1.0.0"
-        />
+        <van-cell title="关于我们" is-link @click="showAboutDialog" />
+        <van-cell title="版本信息" value="v1.0.0" />
       </van-cell-group>
     </div>
 
     <!-- 关于我们对话框 -->
-    <van-dialog
-      v-model:show="aboutDialogVisible"
-      title="关于我们"
-      show-cancel-button
-    >
+    <van-dialog v-model:show="aboutDialogVisible" title="关于我们" show-cancel-button>
       <div class="about-content">
         <p>智能旅游助手 v1.0.0</p>
         <p class="mt-2">基于 AI 技术的智能旅游规划平台</p>
@@ -76,19 +55,71 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
+import { isLoggedIn as checkIsLoggedIn, getUserInfo, logout } from '@/utils/auth'
+import { getProfile } from '@/utils/profile'
 
-// 用户信息
-const userAvatar = 'https://img.yzcdn.cn/vant/cat.jpeg'
-const userName = '游客'
+const router = useRouter()
 
-// 对话框状态
+const defaultAvatar = 'https://img.yzcdn.cn/vant/cat.jpeg'
+const userInfo = ref<any>(null)
+const userAvatar = ref(defaultAvatar)
+const userDesc = ref('')
+
 const aboutDialogVisible = ref(false)
 
-// 显示关于我们对话框
+const isLoggedIn = computed(() => checkIsLoggedIn())
+
+const displayName = computed(() => {
+  if (userInfo.value) {
+    return userInfo.value.username || userInfo.value.account || '用户'
+  }
+  return '游客'
+})
+
+const loadUserInfo = async () => {
+  userInfo.value = getUserInfo()
+  if (userInfo.value) {
+    userAvatar.value = userInfo.value.avatar || defaultAvatar
+    userDesc.value = userInfo.value.desc || ''
+
+    const creator = userInfo.value.username || userInfo.value.account
+    if (creator) {
+      try {
+        const profile = await getProfile(creator)
+        if (profile) {
+          userAvatar.value = profile.avatar || userAvatar.value
+          userDesc.value = profile.desc || userDesc.value
+        }
+      } catch (err) {
+        console.log('获取远程个人信息失败', err)
+      }
+    }
+  }
+}
+
+onMounted(loadUserInfo)
+
 const showAboutDialog = () => {
   aboutDialogVisible.value = true
+}
+
+const goLogin = () => {
+  router.push('/auth')
+}
+
+const goSettings = () => {
+  router.push('/settings')
+}
+
+const handleLogout = () => {
+  logout()
+  userInfo.value = null
+  userAvatar.value = defaultAvatar
+  userDesc.value = ''
+  showToast('已退出登录')
 }
 </script>
 
@@ -124,6 +155,22 @@ const showAboutDialog = () => {
 .user-desc {
   font-size: 14px;
   opacity: 0.9;
+  margin: 0;
+}
+
+.auth-btn-section {
+  padding: 16px;
+}
+
+.logout-section {
+  padding: 16px;
+}
+
+.logout-btn {
+  border-width: 1px;
+  border-color: #ee0a24;
+  color: #ee0a24;
+  font-weight: 500;
 }
 
 .menu-section {
