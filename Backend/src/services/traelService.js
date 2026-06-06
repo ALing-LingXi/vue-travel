@@ -1,7 +1,16 @@
 import dotenv from "dotenv";
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-dotenv.config();
+import path from "path";
+import { fileURLToPath } from "url";
+import { conversationService } from "./conversationService.js";
+
+// 获取当前文件目录
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 加载 .env 文件（指定路径）
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 // 调用LLM模型
 class TravelService {
   constructor() {
@@ -12,116 +21,227 @@ class TravelService {
     // 初始化LLM模型
     let apikey, baseurl, model;
     const provider = process.env.MODEL_PROVIDER;
+    console.log("🔍 MODEL_PROVIDER:", provider);
+
     if (provider === "SiliconFlow") {
       apikey = process.env.SiliconFlow_API_KEY;
       baseurl = process.env.SiliconFlow_BASE_URL;
       model = process.env.SiliconFlow_MODEL;
+      console.log("✅ 使用 SiliconFlow 模型:", model);
     } else if (provider === "DeepSeek") {
       apikey = process.env.DeepSeek_API_KEY;
       baseurl = process.env.DeepSeek_BASE_URL;
       model = process.env.DeepSeek_MODEL;
+      console.log("✅ 使用 DeepSeek 模型:", model);
+    } else {
+      console.error("❌ 未知的 MODEL_PROVIDER:", provider);
     }
+
+    if (!apikey) {
+      console.error("❌ API Key 未配置！");
+    }
+
     this.llm = new ChatOpenAI({
-      // 必须赋值给 this.llm，否则实例丢失
-      apiKey: apikey, // apiKey 在顶层，不在 configuration 内
-      configuration: { baseURL: baseurl }, // baseURL 放在 configuration 内
+      apiKey: apikey,
+      configuration: { baseURL: baseurl },
       model,
-      temperature: 0.7,
+      temperature: 0.1,
       streaming: true,
+      timeout: 120000,
+      maxTokens: 2500,
     });
   }
   async recommend(city, budget, days) {
     if (budget < 100 || days < 0 || days > 30) {
       throw new Error("预算不足或者天数错误");
     }
-    // 这边如果大于30天可能会接受一个超长字符串，这边是一个问题。
+
+    const startTime = Date.now();
+    console.log(`\n========== 开始生成行程 ==========`);
+    console.log(`城市: ${city}, 预算: ${budget}, 天数: ${days}`);
+
     try {
       const message = this.getTravelPrompt(city, budget, days);
+      console.log(`提示词长度: ${JSON.stringify(message).length} 字符`);
+
       const response = await this.llm.invoke(message);
       const fullResponse = response.content || "";
-      // fullResponse.match(/```json\n([\s\S]*?)\n```/) ||
-      //   fullResponse.match(/```\n([\s\S]*?)\n```/) ||
-      //   fullResponse.match(/\{[\s\S]*\}/);
-      // console.log(response);
-      // const jsonResult = JSON.parse(fullResponse);
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`LLM 响应耗时: ${elapsed} 秒`);
+      console.log(`响应长度: ${fullResponse.length} 字符`);
+
+      // 如果响应为空或太短，打印完整响应
+      if (fullResponse.length < 100) {
+        console.error(`❌ 响应内容异常短，完整响应:\n${fullResponse}`);
+        throw new Error("大模型返回内容为空或过短，请重试");
+      }
+
+      // 三层正则匹配
       const match =
-        fullResponse.match(/```json\s*([\s\S]*?)\s*```/) ||
-        fullResponse.match(/```\s*([\s\S]*?)\s*```/) ||
+        fullResponse.match(/```json\n([\s\S]*?)\n```/) ||
+        fullResponse.match(/```\n([\s\S]*?)\n```/) ||
         fullResponse.match(/\{[\s\S]*\}/);
 
       if (!match) {
-        throw new Error("大模型未能返回结构化的计划数据");
+        console.error(
+          ` 未匹配到 JSON，原始响应前 1000 字符:\n${fullResponse.substring(0, 1000)}`,
+        );
+        throw new Error("大模型未能返回结构化的计划数据，请重试");
       }
 
-      // 3. 提取干净的字符串并进行解析
+      const jsonString = match[1] ? match[1].trim() : match[0].trim();
+
+      let jsonResult;
       try {
-        const jsonString = match[1] ? match[1].trim() : match[0].trim();
-        const jsonResult = JSON.parse(jsonString);
-        return jsonResult;
+        jsonResult = JSON.parse(jsonString);
       } catch (parseErr) {
-        console.error("【解析失败】大模型原始返回文本如下：\n", fullResponse);
-        throw new Error(`解析 JSON 数据失败: ${parseErr.message}`);
+        console.error(`JSON 解析失败: ${parseErr.message}`);
+        console.error(`问题 JSON 前 500 字符: ${jsonString.substring(0, 500)}`);
+        throw new Error("AI 返回的数据格式有误，请重试");
       }
+
+      if (
+        !jsonResult.dailyItinerary ||
+        !Array.isArray(jsonResult.dailyItinerary)
+      ) {
+        throw new Error("返回数据缺少 dailyItinerary 字段");
+      }
+
+      return jsonResult;
     } catch (err) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.error(`❌ 请求失败 (耗时 ${elapsed} 秒):`, err.message);
       throw err;
     }
   }
-  async chat(message, streamCallback) {
+  async chat(message, userId, conversationId, streamCallback) {
+    let currentConversationId = conversationId;
+    let isNewConversation = false;
+
     try {
+      // 如果没有 conversationId，创建新对话
+      if (!currentConversationId) {
+        const result = await conversationService.createConversation(
+          userId,
+          "新对话",
+        );
+        if (result.success) {
+          currentConversationId = result.data.id;
+          isNewConversation = true;
+        } else {
+          throw new Error("创建对话失败");
+        }
+      }
+
+      // 保存用户消息
+      await conversationService.saveMessage(
+        currentConversationId,
+        "user",
+        message,
+      );
+
+      // 如果是新对话，生成标题
+      if (isNewConversation) {
+        await conversationService.generateTitle(currentConversationId, message);
+      }
+
       const messages = [
         new SystemMessage("你是一个专业的旅游规划师，负责为用户定制旅游计划。"),
         new HumanMessage(message),
       ];
-      // 2. 这里的 await 很关键，确保正确获取流式迭代器
+
       const stream = await this.llm.stream(messages);
       let fullResponse = "";
+      let lastSentLength = 0;
+      let lastChunk = "";
+
       for await (const chunk of stream) {
-        const content = chunk.content || "";
-        // 3. 移除原先的 content.trim() == '' 过滤
-        // 只要 content 有内容（包括换行和空格），就吐给前端
+        let content = "";
+        if (typeof chunk.content === "string") {
+          content = chunk.content;
+        } else if (typeof chunk === "string") {
+          content = chunk;
+        } else if (Array.isArray(chunk.content)) {
+          content = chunk.content
+            .map((c) => (typeof c === "string" ? c : c.text || ""))
+            .join("");
+        } else if (chunk?.content) {
+          content = String(chunk.content);
+        }
+
         if (content) {
+          content = this.cleanChunk(content);
+
+          if (content === lastChunk) {
+            continue;
+          }
+          lastChunk = content;
+
           fullResponse += content;
-          if (streamCallback) {
-            streamCallback(content); // 实时把哪怕是一个空格或换行发出去
+
+          const newContent = fullResponse.slice(lastSentLength);
+
+          if (newContent && streamCallback) {
+            // 如果是新对话，第一次回调时传递 conversationId
+            if (isNewConversation && lastSentLength === 0) {
+              streamCallback(newContent, currentConversationId);
+            } else {
+              streamCallback(newContent);
+            }
+            lastSentLength = fullResponse.length;
           }
         }
       }
-      // 4. 流正常结束后，如果需要通知外部，可以传一个特定标识或者不传
-      // 更好的做法是交给外层 Express 路由的 finally 块去执行 streamResponse.end()
-      if (streamCallback) {
-        streamCallback(null);
-      }
-      return { success: true, reply: fullResponse };
+
+      // 保存 AI 回复
+      await conversationService.saveMessage(
+        currentConversationId,
+        "ai",
+        fullResponse,
+      );
+
+      return {
+        success: true,
+        reply: fullResponse,
+        conversationId: currentConversationId,
+      };
     } catch (err) {
       console.error("流式聊天出错：", err);
       throw err;
     }
   }
 
+  cleanChunk(content) {
+    if (!content) return content;
+
+    content = content.replace(/[\r\n]+/g, "\n").trim();
+
+    content = content.replace(/(\s)\1{2,}/g, "$1");
+
+    const pattern = /(.{2,})\1{2,}/g;
+    content = content.replace(pattern, "$1");
+
+    return content;
+  }
+
   getTravelPrompt(city, budget, days) {
     return [
-      new HumanMessage({
-        content: `你是一位精通预算控制的专业旅游规划师。请严格按照以下要求，为我定制一份旅游计划：
-【基本信息】
+      new SystemMessage(
+        "你是一个专业的旅游规划师，擅长根据用户的需求生成详细的旅行行程。请始终以标准 JSON 格式返回结果，不要添加任何额外的文字说明。",
+      ),
+      new HumanMessage(`请为以下旅行需求生成详细的旅游规划：
+
 - 目的地城市：${city}
-- 总预算：${budget} 元
-- 旅行天数：${days} 天
+- 预算：${budget}元
+- 旅行天数：${days}天
 
-【定制要求】
-1. 行程规划：每天行程需精确划分到上午、下午、晚上，路线设计要顺路、避免折返。
-2. 景点介绍：每个景点需要提供详细的特色介绍与游览建议。
-3. 交通建议：明确每段行程之间最推荐、最具性价比的交通方式。
-4. 预算分配：合理拆分住宿、餐饮、交通、门票等各项费用，确保总和不超过给定的总预算 ${budget} 元。
-5. 注意事项：包含当地的旅行Tips、防坑指南或需要提前预约的声明。
-
-【输出格式要求】
-请不要输出任何解释性的寒暄或引言，必须严格、完整地返回以下标准的 JSON 格式数据：
-
+请以JSON格式输出，结构如下：
 {
   "success": true,
-  "city": "${city}",
-  "days": ${days},
-  "totalBudget": ${budget},
+  "city": "城市名",
+  "days": 天数,
+  "totalBudget": 总预算,
   "dailyItinerary": [
     {
       "day": 1,
@@ -129,48 +249,38 @@ class TravelService {
       "morning": {
         "spot": "景点名称",
         "duration": "游览时长",
-        "ticket": "门票价格或免费",
-        "transportation": "交通方式及建议",
-        "description": "此处填写景点的详细介绍与游览亮点"
+        "ticket": "门票价格",
+        "transportation": "交通方式",
+        "description": "景点介绍"
       },
       "afternoon": {
         "spot": "景点名称",
         "duration": "游览时长",
-        "ticket": "门票价格或免费",
-        "transportation": "交通方式及建议",
-        "description": "此处填写景点的详细介绍与游览亮点"
+        "ticket": "门票价格",
+        "transportation": "交通方式",
+        "description": "景点介绍"
       },
       "evening": {
-        "spot": "活动或夜景名称",
+        "spot": "活动名称",
         "duration": "活动时长",
-        "ticket": "费用或免费",
-        "transportation": "交通方式及建议",
-        "description": "此处填写活动的详细介绍或夜间游玩建议"
+        "ticket": "费用",
+        "transportation": "交通方式",
+        "description": "活动介绍"
       }
     }
   ],
   "budgetBreakdown": {
-    "accommodation": 预计住宿总费用（数字）,
-    "food": 预计餐饮总费用（数字）,
-    "transportation": 预计市内交通总费用（数字）,
-    "tickets": 预计门票总费用（数字）,
-    "other": 备用或其他总费用（数字）
+    "accommodation": 住宿费用,
+    "food": 餐饮费用,
+    "transportation": 交通费用,
+    "tickets": 门票费用,
+    "other": 其他费用
   },
-  "tips": [
-    "高性价比美食或省钱建议提示1",
-    "最佳游玩季节或出行建议提示2",
-    "需要提前预约的景点提示3"
-  ],
-  "warnings": [
-    "当地防坑避雷注意事项1",
-    "安全或交通堵塞注意事项2"
-  ]
+  "tips": ["提示1", "提示2", "提示3"],
+  "warnings": ["注意事项1", "注意事项2"]
 }
 
-注意：
-1. 请根据实际的 ${days} 天数，在 \`dailyItinerary\` 数组中生成对应数量的每日行程对象（Day 1 到 Day ${days}）。
-2. 请确保 JSON 格式绝对正确，键名与数据类型与示例保持一致，所有字符串数据不要包含换行符。`,
-      }),
+请确保JSON格式正确，可以被解析。只返回JSON，不要有其他文字。`),
     ];
   }
 }

@@ -1,0 +1,165 @@
+{
+  "api_version": "1.0.0",
+  "base_url": "https://hmajax.itheima.net",
+  "description": "接口文档 - 用户与天气服务系统核心API",
+  "modules": [
+    {
+      "name": "用户账户模块",
+      "description": "Account Management",
+      "endpoints": [
+        {
+          "name": "注册账号",
+          "method": "POST",
+          "path": "/api/register",
+          "content_type": "application/json",
+          "request": {
+            "fields": [
+              { "name": "username", "type": "string", "required": true, "description": "用户名，中英文和数字组成，最少8位" },
+              { "name": "password", "type": "string", "required": true, "description": "密码，最少6位" }
+            ]
+          },
+          "response": {
+            "success": {
+              "code": 10000,
+              "message": "注册成功",
+              "data": { "id": "number", "account": "string" }
+            },
+            "error_codes": {
+              "10001": "无账号/密码",
+              "10002": "密码位数不够",
+              "10003": "用户名位数不够",
+              "10005": "用户名被占用"
+            }
+          }
+        },
+        {
+          "name": "登录账号",
+          "method": "POST",
+          "path": "/api/login",
+          "content_type": "application/json",
+          "request": {
+            "fields": [
+              { "name": "username", "type": "string", "required": true, "description": "用户名，最少8位" },
+              { "name": "password", "type": "string", "required": true, "description": "密码，最少6位" }
+            ]
+          },
+          "response": {
+            "success": {
+              "code": 10000,
+              "message": "登录成功",
+              "data": { "username": "string" }
+            },
+            "error_codes": {
+              "10004": "账号/密码未携带"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "天气预报模块",
+      "description": "Weather Service",
+      "endpoints": [
+        {
+          "name": "搜索/获取城市信息",
+          "method": "GET",
+          "path": "/api/weather/city",
+          "request": {
+            "query_params": [
+              { "name": "city", "type": "string", "required": true, "description": "城市名字关键字（支持模糊输入）" }
+            ]
+          },
+          "response": {
+            "success": {
+              "data": "Array<{ code: string, name: string }>"
+            },
+            "description": "返回匹配关键字的城市列表及对应的城市编码"
+          }
+        },
+        {
+          "name": "获取指定城市天气",
+          "method": "GET",
+          "path": "/api/weather",
+          "request": {
+            "query_params": [
+              { "name": "city", "type": "string", "required": true, "description": "城市编码code（如北京市为110100）" }
+            ]
+          },
+          "response": {
+            "success": {
+              "data": {
+                "psPm25": "number",
+                "temperature": "string",
+                "windDirection": "string",
+                "sunrise": "string",
+                "sunset": "string",
+                "dayForecast": "Array<object>"
+              }
+            },
+            "description": "包含今日详细天气和未来一周天气预报"
+          }
+        }
+      ]
+    },
+    {
+      "name": "个人信息模块",
+      "description": "Profile Settings",
+      "auth_note": "该系统的个人信息读写不依赖Token校验，而是通过请求中传递creator（创作者外号）来区分和隔离不同用户的数据",
+      "endpoints": [
+        {
+          "name": "获取个人信息",
+          "method": "GET",
+          "path": "/api/settings",
+          "request": {
+            "query_params": [
+              { "name": "creator", "type": "string", "required": true, "description": "你的外号，用于获取你自己的数据" }
+            ]
+          },
+          "response": {
+            "success": {
+              "data": {
+                "avatar": "string",
+                "nickname": "string",
+                "email": "string",
+                "desc": "string",
+                "gender": "integer (0男1女)"
+              }
+            }
+          }
+        },
+        {
+          "name": "修改个人头像",
+          "method": "PUT",
+          "path": "/api/avatar",
+          "content_type": "multipart/form-data",
+          "request": {
+            "fields": [
+              { "name": "avatar", "type": "file", "required": true, "description": "头像图片文件" },
+              { "name": "creator", "type": "string", "required": true, "description": "外号，指定修改谁的头像" }
+            ]
+          }
+        },
+        {
+          "name": "修改个人信息",
+          "method": "PUT",
+          "path": "/api/settings",
+          "content_type": "application/json",
+          "request": {
+            "fields": [
+              { "name": "creator", "type": "string", "required": true, "description": "外号，指定修改谁的数据" },
+              { "name": "nickname", "type": "string", "required": true, "description": "昵称" },
+              { "name": "email", "type": "string", "required": true, "description": "邮箱" },
+              { "name": "gender", "type": "integer", "required": true, "description": "性别（0男1女）" },
+              { "name": "desc", "type": "string", "required": true, "description": "个人描述" }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "common_response_structure": {
+    "code": "number",
+    "message": "string",
+    "data": "any"
+  }
+}

@@ -6,11 +6,19 @@ export const createStreamResponse = (res)=>{
   // 且保持连接打开，直到客户端关闭连接
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  // 关键优化：禁用 Nagle 算法，减少小数据包延迟
+  res.setHeader("X-Accel-Buffering", "no");
+  // 立即发送响应头，让前端尽快建立连接
+  res.flushHeaders();
+  
   return{
     send:(data)=>{
       try{
-        console.log(data);
         res.write(`data: ${data}\n\n`);
+        // 强制刷新缓冲区，立即发送到客户端
+        if (typeof res.flush === 'function') {
+          res.flush();
+        }
       }catch(err){
         console.error("写入响应数据失败:", err);
       }
