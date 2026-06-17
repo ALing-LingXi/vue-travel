@@ -72,30 +72,106 @@
 
 ```
 ai旅游项目/
-├── vue-ai-frontend-travel/     # 前端项目
-│   ├── src/
-│   │   ├── components/         # 公共组件
-│   │   ├── componets/          # 业务组件
-│   │   ├── views/              # 页面视图
-│   │   ├── router/             # 路由配置
-│   │   ├── utils/              # 工具函数
-│   │   └── style/              # 全局样式
-│   ├── package.json
-│   └── vite.config.ts
 │
-├── Backend/                    # 后端项目
-│   ├── src/
-│   │   ├── routes/             # 路由层
-│   │   ├── services/           # 服务层
-│   │   ├── middleware/         # 中间件
-│   │   └── utils/              # 工具函数
-│   ├── prisma/
-│   │   ├── schema.prisma       # 数据库模型
-│   │   └── dev.db              # SQLite 数据库
-│   └── package.json
+├── vue-ai-frontend-travel/          # 前端项目 (Vue 3 + TypeScript)
+│   │
+│   ├── src/                         # 源代码目录
+│   │   │
+│   │   ├── views/                   # 页面视图 (7个页面)
+│   │   │   ├── HomeView.vue         # 首页 - 行程规划入口
+│   │   │   ├── AuthView.vue         # 登录/注册页
+│   │   │   ├── ChartView.vue        # AI对话页 - 流式聊天
+│   │   │   ├── ConversationListView.vue # 对话历史列表
+│   │   │   ├── detailView.vue       # 行程详情页 - AI生成结果展示
+│   │   │   ├── WeatherView.vue      # 天气查询页
+│   │   │   ├── ProfileView.vue      # 个人中心
+│   │   │   └── SettingsView.vue     # 设置页
+│   │   │
+│   │   ├── components/              # 公共组件
+│   │   │   └── WeatherCard.vue      # 天气卡片组件
+│   │   │
+│   │   ├── componets/               # 业务组件 (拼写保留)
+│   │   │   ├── SpotItem.vue         # 景点卡片 - 行程景点展示
+│   │   │   ├── BudgetTable.vue      # 预算明细表 - 费用分配展示
+│   │   │   └── ChatBubble.vue       # 聊天气泡 - 用户/AI消息展示
+│   │   │
+│   │   ├── utils/                   # 工具模块 (8个模块)
+│   │   │   ├── request.ts           # Axios实例 + CancelToken + fetchStream
+│   │   │   ├── itheima-api.ts       # 第三方API实例 (Token注入 + 401处理)
+│   │   │   ├── auth.ts              # 认证工具 (登录/注册/Token管理)
+│   │   │   ├── conversation.ts      # 对话API (创建/列表/消息/删除/重命名)
+│   │   │   ├── weather.ts           # 天气API (城市搜索/天气查询)
+│   │   │   ├── location.ts          # 地区API (省/市/区三级搜索)
+│   │   │   └── profile.ts           # 个人信息API
+│   │   │
+│   │   ├── router/                  # 路由配置
+│   │   │   └── index.ts             # 路由定义 + beforeEach守卫
+│   │   │
+│   │   ├── style/                   # 全局样式
+│   │   │   └── common.css           # 公共CSS
+│   │   │
+│   │   ├── App.vue                  # 根组件 (Tabbar条件渲染 + Coze SDK)
+│   │   └── main.ts                  # 入口文件 (Vue初始化)
+│   │
+│   ├── public/                      # 静态资源
+│   │   └── favicon.ico              # 网站图标
+│   │
+│   ├── vite.config.ts               # Vite配置 (路径别名@)
+│   ├── tsconfig.json                # TypeScript配置
+│   ├── eslint.config.ts             # ESLint配置 (Vue + TS + oxlint)
+│   ├── .prettierrc.json             # Prettier配置 (无分号/单引号)
+│   ├── package.json                 # 依赖配置
+│   └── index.html                   # HTML入口
 │
-└── README.md
+├── Backend/                         # 后端项目 (Express 5 + LangChain)
+│   │
+│   ├── src/                         # 源代码目录
+│   │   │
+│   │   ├── routes/                  # 路由层 (2个路由模块)
+│   │   │   ├── travel.js            # 旅游路由 (recommend/chat SSE)
+│   │   │   └── conversation.js      # 对话路由 (CRUD操作)
+│   │   │
+│   │   ├── services/                # 服务层 (业务逻辑)
+│   │   │   ├── traelService.js      # 旅游服务 (LLM调用/Prompt/流式输出)
+│   │   │   └── conversationService.js # 对话服务 (数据库操作)
+│   │   │
+│   │   ├── middleware/              # 中间件
+│   │   │   ├── errorHandler.js      # 全局错误处理
+│   │   │   └── rateLimiter.js       # API限流 (20次/10次每分钟)
+│   │   │
+│   │   ├── utils/                   # 工具函数
+│   │   │   ├── createStreamResponse.js # SSE流式响应封装
+│   │   │   └── logger.js            # Winston日志 (按天轮转)
+│   │   │
+│   │   └ index.js                   # 入口文件 (Express启动)
+│   │
+│   ├── prisma/                      # 数据库
+│   │   ├── schema.prisma            # 数据模型 (Conversation/Message)
+│   │   ├── dev.db                   # SQLite数据库文件
+│   │   └── migrations/              # 数据库迁移记录
+│   │
+│   ├── package.json                 # 依赖配置
+│   └── API接口文档.md               # 接口文档
+│
+├── README.md                        # 项目说明文档
+├── API接口文档.md                   # 全局API文档
+├── 简历项目描述.md                  # 简历素材
+└── 面试亮点总结.md                  # 面试准备文档
 ```
+
+### 目录说明
+
+| 目录/文件 | 职责 | 核心功能 |
+|-----------|------|----------|
+| `views/` | 页面视图 | 7个页面，覆盖行程规划、对话、天气、认证 |
+| `components/` | UI组件 | 4个组件，SpotItem/BudgetTable/ChatBubble/WeatherCard |
+| `utils/request.ts` | HTTP请求 | 双Axios实例 + CancelToken + SSE消费 |
+| `utils/itheima-api.ts` | 第三方API | Token注入 + 401自动登出 |
+| `routes/` | 路由层 | 参数校验 + 流式调度 + 错误响应 |
+| `services/` | 服务层 | LLM调用 + Prompt工程 + 数据库操作 |
+| `middleware/` | 中间件 | Rate Limit限流 + 全局错误处理 |
+| `utils/createStreamResponse.js` | SSE工具 | 协议头封装 + send/end/error方法 |
+| `prisma/` | 数据库 | Conversation/Message两表 + 级联删除 |
 
 ---
 
